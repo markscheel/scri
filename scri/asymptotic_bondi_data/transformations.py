@@ -33,19 +33,16 @@ def _process_transformation_kwargs(input_ell_max, **kwargs):
                 "documentation for details).\n           Thus, it must be an array with length given by a "
                 "perfect square; its length is {len(supertranslation)}"
             )
-        # Check that the resulting supertranslation will be real
+        # Impose reality 
         for ell in range(ell_max_supertranslation + 1):
             for m in range(ell + 1):
                 i_pos = sf.LM_index(ell, m, 0)
                 i_neg = sf.LM_index(ell, -m, 0)
                 a = supertranslation[i_pos]
                 b = supertranslation[i_neg]
-                if abs(a - (-1.0) ** m * b.conjugate()) > 3e-16 + 1e-15 * abs(b):
-                    raise ValueError(
-                        f"\nsupertranslation[{i_pos}]={a}  # (ell,m)=({ell},{m})\n"
-                        + "supertranslation[{}]={}  # (ell,m)=({},{})\n".format(i_neg, b, ell, -m)
-                        + "Will result in an imaginary supertranslation."
-                    )
+                supertranslation[i_pos] = (a + (-1.0) ** m * b.conjugate()) / 2.0
+                supertranslation[i_neg] = (-1.0) ** m * supertranslation[i_pos].conjugate()
+                
     spacetime_translation = np.zeros((4,), dtype=float)
     spacetime_translation[0] = sf.constant_from_ell_0_mode(supertranslation[0]).real
     spacetime_translation[1:4] = -sf.vector_from_ell_1_modes(supertranslation[1:4]).real
@@ -102,7 +99,7 @@ def _process_transformation_kwargs(input_ell_max, **kwargs):
 
 def boosted_grid(frame_rotation, boost_velocity, n_theta, n_phi):
     beta = np.linalg.norm(boost_velocity)
-    gamma = 1 / math.sqrt(1 - beta ** 2)
+    gamma = 1 / math.sqrt(1 - beta**2)
     rapidity = math.atanh(beta)
 
     # Construct the function that modifies our rotor grid to account for the boost
@@ -145,9 +142,8 @@ def boosted_grid(frame_rotation, boost_velocity, n_theta, n_phi):
     for j in range(n_theta):
         for k in range(n_phi):
             thetaprm_j, phiprm_k = thetaprm_phiprm[j, k]
-            R_j_k[j, k] = (
-                Bprm_j_k(thetaprm_j, phiprm_k) * frame_rotation * quaternion.from_spherical_coords(thetaprm_j, phiprm_k)
-            )
+            rotated_coord_quaternion = frame_rotation * quaternion.from_spherical_coords(thetaprm_j, phiprm_k)
+            R_j_k[j, k] = Bprm_j_k(*quaternion.as_spherical_coords(rotated_coord_quaternion)) * rotated_coord_quaternion
 
     return R_j_k
 
@@ -179,7 +175,7 @@ def conformal_factors(boost_velocity, distorted_grid_rotors):
     from quaternion import rotate_vectors
 
     β = np.linalg.norm(boost_velocity)
-    γ = 1 / math.sqrt(1 - β ** 2)
+    γ = 1 / math.sqrt(1 - β**2)
 
     # Note that ðk / k = ð(v·r) / (1 - v·r), but evaluating ð(v·r) is slightly delicate.  As modes
     # in the undistorted frame, we have ð(v·r) ~ (v·r), but the right hand side is now an s=1 field,
@@ -196,7 +192,7 @@ def conformal_factors(boost_velocity, distorted_grid_rotors):
     one_over_k = γ * (1 - v_dot_r)
     k = 1.0 / one_over_k
     ðk_over_k = ðv_dot_r / (1 - v_dot_r)
-    one_over_k_cubed = one_over_k ** 3
+    one_over_k_cubed = one_over_k**3
     return k, ðk_over_k, one_over_k, one_over_k_cubed
 
 
@@ -297,7 +293,7 @@ def transform(self, **kwargs):
     n_theta = 2 * working_ell_max + 1
     n_phi = n_theta
     β = np.linalg.norm(boost_velocity)
-    γ = 1 / math.sqrt(1 - β ** 2)
+    γ = 1 / math.sqrt(1 - β**2)
 
     # Make this into a Modes object, so it can keep track of its spin weight, etc., through the
     # various operations needed below.
@@ -315,7 +311,9 @@ def transform(self, **kwargs):
     u = self.u
     α = sf.Grid(supertranslation.evaluate(distorted_grid_rotors), spin_weight=0).real[np.newaxis, :, :]
     # The factors of 1/sqrt(2) and 1/2 come from using the GHP eth instead of the NP eth.
-    ðα = sf.Grid(supertranslation.eth.evaluate(distorted_grid_rotors) / np.sqrt(2), spin_weight=α.s + 1)[np.newaxis, :, :]
+    ðα = sf.Grid(supertranslation.eth.evaluate(distorted_grid_rotors) / np.sqrt(2), spin_weight=α.s + 1)[
+        np.newaxis, :, :
+    ]
     ððα = sf.Grid(0.5 * supertranslation.eth.eth.evaluate(distorted_grid_rotors), spin_weight=α.s + 2)[np.newaxis, :, :]
     k, ðk_over_k, one_over_k, one_over_k_cubed = conformal_factors(boost_velocity, distorted_grid_rotors)
 

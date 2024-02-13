@@ -6,21 +6,10 @@ import spherical_functions as sf
 import scri
 import pytest
 
+from conftest import kerr_schild, real_supertranslation
+
 ABD = scri.AsymptoticBondiData
 abd = scri.asymptotic_bondi_data
-
-
-def kerr_schild(mass, spin, ell_max=8):
-    psi2 = np.zeros(sf.LM_total_size(0, ell_max), dtype=complex)
-    psi1 = np.zeros(sf.LM_total_size(0, ell_max), dtype=complex)
-    psi0 = np.zeros(sf.LM_total_size(0, ell_max), dtype=complex)
-
-    # In the Moreschi-Boyle convention
-    psi2[0] = -sf.constant_as_ell_0_mode(mass)
-    psi1[2] = -np.sqrt(2) * (3j * spin / 2) * (np.sqrt((8 / 3) * np.pi))
-    psi0[6] = 2 * (3 * spin ** 2 / mass / 2) * (np.sqrt((32 / 15) * np.pi))
-
-    return psi2, psi1, psi0
 
 
 def test_abd_schwarzschild():
@@ -66,7 +55,7 @@ def test_abd_conformal_factors():
         κ = spinsfast.map2salm(k, 0, ell_max)
         SWSHs = sf.SWSH_grid(distorted_grid_rotors, 0, ell_max)
         one_over_k2 = np.tensordot(κinv, SWSHs, axes=([-1], [-1]))
-        one_over_k_cubed2 = one_over_k2 ** 3
+        one_over_k_cubed2 = one_over_k2**3
         k2 = 1 / one_over_k2
         ðκ = sf.eth_GHP(κ, 0)
         SWSHs = sf.SWSH_grid(distorted_grid_rotors, 1, ell_max)
@@ -82,7 +71,7 @@ def test_abd_conformal_factors():
     frame_rotation = quaternion.one
     boost_velocity = np.array([0.01, 0.02, 0.03])
     β = np.linalg.norm(boost_velocity)
-    γ = 1 / math.sqrt(1 - β ** 2)
+    γ = 1 / math.sqrt(1 - β**2)
     distorted_grid_rotors = abd.transformations.boosted_grid(frame_rotation, boost_velocity, n_theta, n_phi)
     k, ðk_over_k, one_over_k, one_over_k_cubed = cf(boost_velocity, distorted_grid_rotors)
     k2, ðk_over_k2, one_over_k2, one_over_k_cubed2 = cf2(boost_velocity, distorted_grid_rotors)
@@ -114,7 +103,7 @@ def test_abd_schwarzschild_transform():
         abd = ABD.from_initial_values(u, ell_max=ell_max, psi2=psi2)
         rest_mass = abd.bondi_rest_mass()
         β = np.linalg.norm(v)
-        γ = 1 / np.sqrt(1 - β ** 2)
+        γ = 1 / np.sqrt(1 - β**2)
         abdprime = abd.transform(boost_velocity=v)
         transformed_rest_mass = abdprime.bondi_rest_mass()
         transformed_four_momentum = abdprime.bondi_four_momentum()
@@ -142,7 +131,7 @@ def test_abd_bondi_angular_momentum():
         psi2, psi1, psi0 = kerr_schild(mass, spin, ell_max)
         abd = ABD.from_initial_values(u, ell_max=ell_max, psi2=psi2, psi1=psi1)
         β = np.linalg.norm(v)
-        γ = 1 / np.sqrt(1 - β ** 2)
+        γ = 1 / np.sqrt(1 - β**2)
         abdprime = abd.transform(boost_velocity=v)
         transformed_angular_momentum = abdprime.bondi_angular_momentum()
         angular_momentum = abd.bondi_angular_momentum()[0]
@@ -161,8 +150,8 @@ def test_abd_kerr():
     angular_momentum = abd.bondi_angular_momentum()
     S = abd.bondi_dimensionless_spin()
     tolerance = 1e-14
-    # This is true beacuse we are in the center of momentum frame
-    assert np.allclose(S * mass ** 2, angular_momentum, atol=tolerance, rtol=tolerance)
+    # This is true because we are in the center-of-momentum frame
+    assert np.allclose(S * mass**2, angular_momentum, atol=tolerance, rtol=tolerance)
     abdprime = abd.transform(boost_velocity=v)
     S_prime = abdprime.bondi_dimensionless_spin()
     tolerance = 1e-14
@@ -171,3 +160,53 @@ def test_abd_kerr():
     G = abdprime.bondi_CoM_charge()
     P = abdprime.bondi_four_momentum()
     assert np.allclose(N, G - abdprime.t[:, np.newaxis] * P[:, 1:], atol=tolerance, rtol=tolerance)
+
+
+def test_abd_WaveformModes():
+    # Compare a general BMS transformation of a ~random ABD object to the equivalent transformation
+    # of the strain of a WaveformModes object
+
+    tolerance = 4e-12 # should pass with 9e-13; bumped for safety; would be 1e-14 if not for boost
+    np.random.seed(123)
+
+    def abd_to_h_data(abd):
+        # h = 2 σ̄
+        return 2 * abd.sigma.bar.ndarray.copy()
+
+    # Generate initial ABD from Kerr-Schild plus some quadratic-in-time shear data
+    mass = 1.23
+    spin = 0.35
+    ell_max = 6
+    u = np.linspace(-10, 10, num=1_000)
+    ψ2, ψ1, ψ0 = kerr_schild(mass, spin, ell_max)
+    σ0 = np.squeeze(0.01000 * (np.random.rand((ell_max+1)**2, 2).view(complex) - (0.5+0.5j)))
+    σ0[:sf.LM_index(2,-2,0)] = 0
+    σ̇0 = np.squeeze(0.00020 * (np.random.rand((ell_max+1)**2, 2).view(complex) - (0.5+0.5j)))
+    σ̇0[:sf.LM_index(2,-2,0)] = 0
+    σ̈0 = np.squeeze(0.00003 * (np.random.rand((ell_max+1)**2, 2).view(complex) - (0.5+0.5j)))
+    σ̈0[:sf.LM_index(2,-2,0)] = 0
+    abd = ABD.from_initial_values(u, ell_max=ell_max, sigma0=σ0, sigmadot0=σ̇0, sigmaddot0=σ̈0, psi2=ψ2, psi1=ψ1, psi0=ψ0)
+    h = scri.WaveformModes(
+        t=abd.t, data=abd_to_h_data(abd), ell_min=abd.ell_min, ell_max=abd.ell_max,
+        frameType=scri.Inertial, dataType=scri.h, r_is_scaled_out=True, m_is_scaled_out=True
+    )
+
+    # Generate a random supertranslation
+    α = real_supertranslation(np.squeeze(0.01 * (np.random.rand((ell_max+1)**2, 2).view(complex) - (0.5+0.5j))))
+    R = np.random.randn(4)  # Will be normalized automatically
+    v⃗ = 0.01 * (np.random.rand(3)-0.5)
+
+    # Transform ABD and comparable WaveformModes objects
+    abdprime = abd.transform(supertranslation=α, frame_rotation=R, boost_velocity=v⃗)
+    hprime = h.transform(supertranslation=α, frame_rotation=R, boost_velocity=v⃗)
+
+    # Interpolate to same set of times
+    t = scri.extrapolation.intersection(hprime.t, abdprime.t)
+    hprime = hprime.interpolate(t)
+    abdprime = abdprime.interpolate(t)
+
+    assert np.allclose(
+        hprime.data,
+        abd_to_h_data(abdprime)[:, 4:],
+        atol=tolerance, rtol=tolerance
+    )
